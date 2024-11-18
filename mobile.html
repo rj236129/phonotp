@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Portal</title>
+    <!-- Firebase Libraries -->
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-analytics.js" type="module"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+        }
+        .header {
+            background-color: #333;
+            color: white;
+            text-align: center;
+            padding: 15px 0;
+        }
+        .container {
+            padding: 20px;
+        }
+        .form-container {
+            max-width: 400px;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        input, textarea, button {
+            width: 100%;
+            margin-bottom: 15px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .job-list {
+            margin-top: 20px;
+        }
+        .job-item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            background-color: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .btn-group button {
+            display: inline-block;
+            margin: 5px 0;
+            padding: 5px 10px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            color: #fff;
+        }
+        .apply-btn { background-color: #28a745; }
+        .apply-btn:hover { background-color: #218838; }
+        .edit-btn { background-color: #ffc107; }
+        .edit-btn:hover { background-color: #e0a800; }
+        .delete-btn { background-color: #dc3545; }
+        .delete-btn:hover { background-color: #c82333; }
+    </style>
+</head>
+<body>
+    <!-- Header Section -->
+    <div class="header">
+        <h1>Job Portal</h1>
+        <button onclick="window.location.href='history.html'">View Job History</button>
+    </div>
+
+    <!-- Authentication Section -->
+    <div id="auth-section">
+        <h2 id="auth-title">Login</h2>
+        <div class="form-container">
+            <input type="text" id="auth-phone" placeholder="Enter your phone number" required>
+            <div id="recaptcha-container"></div>
+            <button id="auth-btn">Send OTP</button>
+            <input type="text" id="auth-otp" placeholder="Enter OTP" style="display: none;" required>
+            <button id="verify-otp-btn" style="display: none;">Verify OTP</button>
+            <p id="toggle-auth">
+                Don't have an account? 
+                <span style="color: blue; cursor: pointer;" onclick="toggleSignup()">Sign Up</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Post Job Section -->
+    <div id="post-job-section" style="display: none;">
+        <h2>Post a Job</h2>
+        <div class="form-container">
+            <input type="text" id="job-title" placeholder="Job Title" required>
+            <input type="text" id="job-location" placeholder="Location" required>
+            <input type="text" id="job-salary" placeholder="Salary" required>
+            <textarea id="job-description" rows="4" placeholder="Job Description" required></textarea>
+            <button id="post-job-btn">Post Job</button>
+        </div>
+    </div>
+
+    <!-- Available Jobs Section -->
+    <div id="jobs-section" style="display: none;">
+        <h2>Available Jobs</h2>
+        <input type="text" id="search-input" placeholder="Search jobs..." onkeyup="searchJobs()">
+        <div class="job-list" id="job-list"></div>
+    </div>
+
+    <!-- Firebase & JavaScript -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getAuth, signInWithPhoneNumber, RecaptchaVerifier, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+        import { getDatabase, ref, push, remove, get } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+        const firebaseConfig = {
+  apiKey: "AIzaSyBcyK55ubpfAlTa4MUOC9iPet9gnik4hRI",
+  authDomain: "phonotp-22d87.firebaseapp.com",
+  databaseURL: "https://phonotp-22d87-default-rtdb.firebaseio.com",
+  projectId: "phonotp-22d87",
+  storageBucket: "phonotp-22d87.firebasestorage.app",
+  messagingSenderId: "718927685746",
+  appId: "1:718927685746:web:99c2fb73595738b2d53aeb"
+};
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // Set up reCAPTCHA
+        const recaptchaVerifier = new RecaptchaVerifier('recaptcha-container', {
+            size: 'invisible',
+            callback: response => console.log('reCAPTCHA verified'),
+            'expired-callback': () => alert('reCAPTCHA expired. Please try again.')
+        }, auth);
+        recaptchaVerifier.render();
+
+        // Authenticate user
+        document.getElementById('auth-btn').addEventListener('click', () => {
+            const phoneNumber = document.getElementById('auth-phone').value;
+            signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier)
+                .then(confirmationResult => {
+                    window.confirmationResult = confirmationResult;
+                    toggleOtpInput(true);
+                })
+                .catch(error => alert('Authentication error: ' + error.message));
+        });
+
+        document.getElementById('verify-otp-btn').addEventListener('click', () => {
+            const otp = document.getElementById('auth-otp').value;
+            window.confirmationResult.confirm(otp)
+                .then(() => {
+                    alert('Login successful');
+                    toggleSections(true);
+                })
+                .catch(error => alert('Invalid OTP: ' + error.message));
+        });
+
+        // Helper Functions
+        function toggleSections(show) {
+            document.getElementById('auth-section').style.display = show ? 'none' : 'block';
+            document.getElementById('post-job-section').style.display = show ? 'block' : 'none';
+            document.getElementById('jobs-section').style.display = show ? 'block' : 'none';
+            if (show) loadJobs();
+        }
+
+        function loadJobs() {
+            const jobList = document.getElementById('job-list');
+            jobList.innerHTML = '';
+            get(ref(db, 'jobs')).then(snapshot => {
+                if (snapshot.exists()) {
+                    snapshot.forEach(childSnapshot => {
+                        const job = childSnapshot.val();
+                        const jobDiv = document.createElement('div');
+                        jobDiv.classList.add('job-item');
+                        jobDiv.innerHTML = `
+                            <h3>${job.title}</h3>
+                            <p>${job.location}</p>
+                            <p>${job.salary}</p>
+                            <p>${job.description}</p>
+                            <div class="btn-group">
+                                <button class="apply-btn">Apply</button>
+                                <button class="edit-btn" onclick="editJob('${childSnapshot.key}')">Edit</button>
+                                <button class="delete-btn" onclick="deleteJob('${childSnapshot.key}')">Delete</button>
+                            </div>`;
+                        jobList.appendChild(jobDiv);
+                    });
+                } else {
+                    jobList.innerHTML = 'No jobs available.';
+                }
+            });
+        }
+
+        function searchJobs() {
+            const searchValue = document.getElementById('search-input').value.toLowerCase();
+            document.querySelectorAll('.job-item').forEach(item => {
+                item.style.display = item.innerText.toLowerCase().includes(searchValue) ? '' : 'none';
+            });
+        }
+
+        function editJob(jobId) {
+            alert(`Edit functionality for job ID: ${jobId} coming soon.`);
+        }
+
+        function deleteJob(jobId) {
+            if (confirm('Are you sure you want to delete this job?')) {
+                remove(ref(db, 'jobs/' + jobId))
+                    .then(() => loadJobs())
+                    .catch(error => alert('Error deleting job: ' + error.message));
+            }
+        }
+    </script>
+</body>
+</html>
